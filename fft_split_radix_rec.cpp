@@ -148,12 +148,7 @@ public:
         return unit_root((HINT_2PI * n) / m);
     }
     // shift表示圆平分为1<<shift份,n表示第几个单位根
-    Complex get_complex(UINT_32 shift, size_t n) const
-    {
-        return std::conj(table[shift][n]);
-    }
-    // shift表示圆平分为1<<shift份,n表示第几个单位根的共轭
-    Complex get_complex_conj(UINT_32 shift, size_t n) const
+    Complex get_omega(UINT_32 shift, size_t n) const
     {
         return table[shift][n];
     }
@@ -237,7 +232,7 @@ void fft_radix2_dit(Complex *input, size_t fft_len, const bool bit_rev = true)
         {
             for (size_t pos = begin; pos < begin + rank; pos++)
             {
-                Complex omega = TABLE.get_complex_conj(shift, pos - begin);
+                Complex omega = TABLE.get_omega(shift, pos - begin);
                 fft_radix2_dit_butterfly(omega, input + pos, rank);
             }
         }
@@ -257,7 +252,7 @@ void fft_radix2_dif(Complex *input, size_t fft_len, bool bit_rev = true)
         {
             for (size_t pos = begin; pos < begin + rank; pos++)
             {
-                Complex omega = TABLE.get_complex_conj(shift, pos - begin);
+                Complex omega = TABLE.get_omega(shift, pos - begin);
                 fft_radix2_dif_butterfly(omega, input + pos, rank);
             }
         }
@@ -286,8 +281,8 @@ void fft_split_radix_dit_rec(Complex *input, size_t fft_len)
     const INT_32 shift = hint_log2(fft_len);
     for (size_t pos = 0; pos < quarter_len; pos++)
     {
-        Complex omega = TABLE.get_complex_conj(shift, pos);
-        Complex omega_cube = TABLE.get_complex_conj(shift, pos * 3);
+        Complex omega = TABLE.get_omega(shift, pos);
+        Complex omega_cube = TABLE.get_omega(shift, pos * 3);
         fft_split_radix_dit_butterfly(omega, omega_cube, input + pos, quarter_len);
     }
 }
@@ -305,8 +300,8 @@ void fft_split_radix_dif_rec(Complex *input, size_t fft_len)
     const INT_32 shift = hint_log2(fft_len);
     for (size_t pos = 0; pos < quarter_len; pos++)
     {
-        Complex omega = TABLE.get_complex_conj(shift, pos);
-        Complex omega_cube = TABLE.get_complex_conj(shift, pos * 3);
+        Complex omega = TABLE.get_omega(shift, pos);
+        Complex omega_cube = TABLE.get_omega(shift, pos * 3);
         fft_split_radix_dif_butterfly(omega, omega_cube, input + pos, quarter_len);
     }
     // 最后分别求前半部分和后面的两部分的DIF

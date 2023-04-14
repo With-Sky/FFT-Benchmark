@@ -790,7 +790,7 @@ using namespace hint_transform;
 template <typename T>
 vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
 {
-    size_t len1 = in1.size(), len2 = in2.size(), out_len = len1 + len2 - 1;
+    size_t len1 = in1.size(), len2 = in2.size(), out_len = len1 + len2;
     vector<T> result(out_len);
     size_t fft_len = min_2pow(out_len);
     Complex *fft_ary = new Complex[fft_len];

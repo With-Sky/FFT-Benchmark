@@ -264,7 +264,7 @@ void fft_radix2_dif(Complex *input, size_t fft_len, bool bit_rev = true)
     }
 }
 
-// 基2迭代fft，时间抽取，无二进制逆序
+// 分裂基递归fft，时间抽取，无二进制逆序
 void fft_split_radix_dit_rec(Complex *input, size_t fft_len)
 {
     // 小于某阈值调用迭代FFT
@@ -287,7 +287,7 @@ void fft_split_radix_dit_rec(Complex *input, size_t fft_len)
     }
 }
 
-// 基2递归fft，频率抽取，无二进制逆序
+// 分裂基递归fft，频率抽取，无二进制逆序
 void fft_split_radix_dif_rec(Complex *input, size_t fft_len)
 {
     // 小于某阈值调用迭代FFT

@@ -296,7 +296,7 @@ void fft_radix2_dif(Complex *input, size_t fft_len, bool bit_rev = true)
     }
 }
 
-// 基2模板迭代fft，时间抽取，无二进制逆序
+// 分裂基模板迭代fft，时间抽取，无二进制逆序
 template <size_t LEN>
 void fft_split_radix_dit_template(Complex *input)
 {
@@ -329,7 +329,7 @@ void fft_split_radix_dit_template<4>(Complex *input)
     fft_dit_4point(input, 1);
 }
 
-// 基2模板递归fft，频率抽取，无二进制逆序
+// 分裂基模板递归fft，频率抽取，无二进制逆序
 template <size_t LEN>
 void fft_split_radix_dif_template(Complex *input)
 {

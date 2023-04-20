@@ -76,7 +76,7 @@ namespace hint
         return res;
     }
     template <typename T>
-    constexpr size_t hint_log2(T n)
+    constexpr T hint_log2(T n)
     {
         T res = 0;
         while (n > 1)

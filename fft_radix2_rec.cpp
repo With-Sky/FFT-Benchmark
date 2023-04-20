@@ -76,7 +76,7 @@ void binary_reverse_swap(T &ary, size_t len)
     }
 }
 template <typename T>
-constexpr size_t hint_log2(T n)
+constexpr T hint_log2(T n)
 {
     T res = 0;
     while (n > 1)

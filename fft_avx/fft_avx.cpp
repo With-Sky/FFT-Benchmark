@@ -172,53 +172,13 @@ namespace hint
         private:
             std::vector<std::vector<Complex>> table1;
             std::vector<std::vector<Complex>> table3;
-            INT_32 max_log_size = 1;
-            INT_32 cur_log_size = 1;
+            INT_32 max_log_size = 2;
+            INT_32 cur_log_size = 2;
 
             static constexpr size_t FAC = 1;
 
             ComplexTableY(const ComplexTableY &) = delete;
             ComplexTableY &operator=(const ComplexTableY &) = delete;
-
-            // shift表示圆平分为1<<shift份,n表示第几个单位根的共轭
-            Complex complex_conj(UINT_32 shift, size_t n) const
-            {
-                size_t rank = 1ull << shift;
-                const size_t rank_ff = rank - 1, quad_n = n << 2;
-                // n &= rank_ff;
-                size_t zone = quad_n >> shift; // 第几象限
-                if ((quad_n & rank_ff) == 0)
-                {
-                    static constexpr Complex ONES[4] = {Complex(1, 0), Complex(0, 1), Complex(-1, 0), Complex(0, -1)};
-                    return ONES[zone];
-                }
-                Complex tmp;
-                if ((zone & 2) == 0)
-                {
-                    if ((zone & 1) == 0)
-                    {
-                        tmp = table1[shift][n];
-                    }
-                    else
-                    {
-                        tmp = table1[shift][rank / 2 - n];
-                        tmp.real(-tmp.real());
-                    }
-                }
-                else
-                {
-                    if ((zone & 1) == 0)
-                    {
-                        tmp = -table1[shift][n - rank / 2];
-                    }
-                    else
-                    {
-                        tmp = table1[shift][rank - n];
-                        tmp.imag(-tmp.imag());
-                    }
-                }
-                return tmp;
-            }
 
         public:
             ~ComplexTableY() {}
@@ -230,6 +190,7 @@ namespace hint
                 table1.resize(max_shift + 1);
                 table3.resize(max_shift + 1);
                 table1[0] = table1[1] = table3[0] = table3[1] = std::vector<Complex>{1};
+                table1[2] = table3[2] = std::vector<Complex>{1};
 #if TABLE_PRELOAD == 1
                 expand(max_shift);
 #endif
@@ -259,11 +220,14 @@ namespace hint
                         table1[i][pos] = Complex(cos_theta, -sin_theta);
                         table1[i][vec_size - pos] = Complex(sin_theta, -cos_theta);
                     }
-                    table1[i][vec_size / 2] = std::conj(unit_root(len, len / 8));
-                    for (size_t pos = 1; pos < vec_size; pos += 2)
+                    table1[i][vec_size / 2] = std::conj(unit_root(8, 1));
+                    for (size_t pos = 1; pos < vec_size / 2; pos += 2)
                     {
-                        table3[i][pos] = complex_conj(i, pos * 3);
+                        Complex tmp = get_omega(i, pos * 3);
+                        table3[i][pos] = tmp;
+                        table3[i][vec_size - pos] = Complex(tmp.imag(), tmp.real());
                     }
+                    table3[i][vec_size / 2] = std::conj(unit_root(8, 3));
                 }
                 cur_log_size = std::max(cur_log_size, shift);
             }
@@ -280,7 +244,41 @@ namespace hint
             // shift表示圆平分为1<<shift份,n表示第几个单位根
             Complex get_omega(UINT_32 shift, size_t n) const
             {
-                return table1[shift][n];
+                size_t rank = 1ull << shift;
+                const size_t rank_ff = rank - 1, quad_n = n << 2;
+                // n &= rank_ff;
+                size_t zone = quad_n >> shift; // 第几象限
+                if ((quad_n & rank_ff) == 0)
+                {
+                    static constexpr Complex ONES[4] = {Complex(1, 0), Complex(0, -1), Complex(-1, 0), Complex(0, 1)};
+                    return ONES[zone];
+                }
+                Complex tmp;
+                if ((zone & 2) == 0)
+                {
+                    if ((zone & 1) == 0)
+                    {
+                        tmp = table1[shift][n];
+                    }
+                    else
+                    {
+                        tmp = table1[shift][rank / 2 - n];
+                        tmp.real(-tmp.real());
+                    }
+                }
+                else
+                {
+                    if ((zone & 1) == 0)
+                    {
+                        tmp = -table1[shift][n - rank / 2];
+                    }
+                    else
+                    {
+                        tmp = table1[shift][rank - n];
+                        tmp.imag(-tmp.imag());
+                    }
+                }
+                return tmp;
             }
             // shift表示圆平分为1<<shift份,3n表示第几个单位根
             Complex get_omega3(UINT_32 shift, size_t n) const
@@ -695,33 +693,38 @@ namespace hint
             fft_dif_8point(input, 1);
         }
 
+        // 辅助选择函数
         template <size_t LEN = 1>
-        void fft_dit_template(Complex *input, size_t fft_len)
+        void fft_split_radix_dit_template_alt(Complex *input, size_t fft_len)
         {
             if (fft_len > LEN)
             {
-                fft_dit_template<LEN * 2>(input, fft_len);
+                fft_split_radix_dit_template_alt<LEN * 2>(input, fft_len);
                 return;
             }
             TABLE.expand(hint_log2(LEN));
             fft_split_radix_dit_template<LEN>(input);
         }
         template <>
-        void fft_dit_template<1 << 24>(Complex *input, size_t fft_len) {}
+        void fft_split_radix_dit_template_alt<1 << 24>(Complex *input, size_t fft_len) {}
 
+        // 辅助选择函数
         template <size_t LEN = 1>
-        void fft_dif_template(Complex *input, size_t fft_len)
+        void fft_split_radix_dif_template_alt(Complex *input, size_t fft_len)
         {
             if (fft_len > LEN)
             {
-                fft_dif_template<LEN * 2>(input, fft_len);
+                fft_split_radix_dif_template_alt<LEN * 2>(input, fft_len);
                 return;
             }
             TABLE.expand(hint_log2(LEN));
             fft_split_radix_dif_template<LEN>(input);
         }
         template <>
-        void fft_dif_template<1 << 24>(Complex *input, size_t fft_len) {}
+        void fft_split_radix_dif_template_alt<1 << 24>(Complex *input, size_t fft_len) {}
+
+        auto fft_split_radix_dit = fft_split_radix_dit_template_alt<1>;
+        auto fft_split_radix_dif = fft_split_radix_dif_template_alt<1>;
 
         /// @brief 时间抽取基2fft
         /// @param input 复数组
@@ -734,7 +737,7 @@ namespace hint
             {
                 binary_reverse_swap(input, fft_len);
             }
-            fft_dit_template<1>(input, fft_len);
+            fft_split_radix_dit(input, fft_len);
         }
 
         /// @brief 频率抽取基2fft
@@ -744,7 +747,7 @@ namespace hint
         inline void fft_dif(Complex *input, size_t fft_len, bool bit_rev = true)
         {
             fft_len = max_2pow(fft_len);
-            fft_dif_template<1>(input, fft_len);
+            fft_split_radix_dif(input, fft_len);
             if (bit_rev)
             {
                 binary_reverse_swap(input, fft_len);
@@ -781,6 +784,101 @@ namespace hint
             fft_dit(input, fft_len, bit_rev);
             fft_conj(input, fft_len, fft_len);
         }
+#if MULTITHREAD == 1
+        // ComplexTable T(23);
+        void fft_dit_2ths(Complex *input, size_t fft_len)
+        {
+            const size_t half_len = fft_len / 2;
+            const INT_32 log_len = hint_log2(fft_len);
+            TABLE.expand(log_len);
+            auto th = std::async(fft_dit, input, half_len, false);
+            fft_dit(input + half_len, half_len, false);
+            th.wait();
+            auto proc = [&](size_t start, size_t end)
+            {
+                for (size_t i = start; i < end; i++)
+                {
+                    Complex omega = TABLE.get_omega(log_len, i);
+                    fft_radix2_dit_butterfly(omega, input + i, half_len);
+                }
+            };
+            th = std::async(proc, 0, half_len / 2);
+            proc(half_len / 2, half_len);
+            th.wait();
+        }
+        void fft_dif_2ths(Complex *input, size_t fft_len)
+        {
+            const size_t half_len = fft_len / 2;
+            const INT_32 log_len = hint_log2(fft_len);
+            TABLE.expand(log_len);
+            auto proc = [&](size_t start, size_t end)
+            {
+                for (size_t i = start; i < end; i++)
+                {
+                    Complex omega = TABLE.get_omega(log_len, i);
+                    fft_radix2_dif_butterfly(omega, input + i, half_len);
+                }
+            };
+            auto th = std::async(proc, 0, half_len / 2);
+            proc(half_len / 2, half_len);
+            th.wait();
+            th = std::async(fft_dif, input, half_len, false);
+            fft_dif(input + half_len, half_len, false);
+            th.wait();
+        }
+        void fft_dit_4ths(Complex *input, size_t fft_len)
+        {
+            const size_t half_len = fft_len / 2;
+            const INT_32 log_len = hint_log2(fft_len);
+            TABLE.expand(log_len);
+            auto th1 = std::async(fft_dit_2ths, input, half_len);
+            fft_dit_2ths(input + half_len, half_len);
+            th1.wait();
+
+            auto proc = [&](size_t start, size_t end)
+            {
+                for (size_t i = start; i < end; i++)
+                {
+                    Complex omega = TABLE.get_omega(log_len, i);
+                    fft_radix2_dit_butterfly(omega, input + i, half_len);
+                }
+            };
+            const size_t sub_len = fft_len / 8;
+            th1 = std::async(proc, 0, sub_len);
+            auto th2 = std::async(proc, sub_len, sub_len * 2);
+            auto th3 = std::async(proc, sub_len * 2, sub_len * 3);
+            proc(sub_len * 3, sub_len * 4);
+            th1.wait();
+            th2.wait();
+            th3.wait();
+        }
+        void fft_dif_4ths(Complex *input, size_t fft_len)
+        {
+            const size_t half_len = fft_len / 2;
+            const INT_32 log_len = hint_log2(fft_len);
+            TABLE.expand(log_len);
+            auto proc = [&](size_t start, size_t end)
+            {
+                for (size_t i = start; i < end; i++)
+                {
+                    Complex omega = TABLE.get_omega(log_len, i);
+                    fft_radix2_dif_butterfly(omega, input + i, half_len);
+                }
+            };
+            const size_t sub_len = fft_len / 8;
+            auto th1 = std::async(proc, 0, sub_len);
+            auto th2 = std::async(proc, sub_len, sub_len * 2);
+            auto th3 = std::async(proc, sub_len * 2, sub_len * 3);
+            proc(sub_len * 3, sub_len * 4);
+            th1.wait();
+            th2.wait();
+            th3.wait();
+
+            th1 = std::async(fft_dif_2ths, input, half_len);
+            fft_dif_2ths(input + half_len, half_len);
+            th1.wait();
+        }
+#endif
     }
 }
 using namespace std;
@@ -797,7 +895,7 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
     com_ary_combine_copy(fft_ary, in1, len1, in2, len2);
     // fft_radix2_dif_lut(fft_ary, fft_len, false); // 经典FFT
 #if MULTITHREAD == 1
-    fft_dif_4ths(fft_ary, fft_len); // 4线程FFT
+    fft_dif_2ths(fft_ary, fft_len); // 4线程FFT
 #else
     fft_dif(fft_ary, fft_len, false); // 优化FFT
 #endif
@@ -808,7 +906,7 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
     }
     // fft_radix2_dit_lut(fft_ary, fft_len, false); // 经典FFT
 #if MULTITHREAD == 1
-    fft_dit_4ths(fft_ary, fft_len); // 4线程FFT
+    fft_dit_2ths(fft_ary, fft_len); // 4线程FFT
 #else
     fft_dit(fft_ary, fft_len, false); // 优化FFT
 #endif

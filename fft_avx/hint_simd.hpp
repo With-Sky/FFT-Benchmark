@@ -6,6 +6,7 @@
 #define HINT_SIMD_HPP
 
 #pragma GCC target("fma")
+#pragma GCC target("avx2")
 
 // Use AVX
 // 256bit simd
@@ -114,19 +115,22 @@ struct Complex2
     {
         data = _mm256_setzero_pd();
     }
-    void store(Complex *a, Complex *b) const
-    {
-        _mm256_storeu2_m128d((double *)b, (double *)a, data);
-    }
     void store(Complex *a) const
     {
         _mm256_storeu_pd((double *)a, data);
     }
     void print() const
     {
-        Complex a, b;
-        store(&a, &b);
-        std::cout << a << "\t" << b << "\n";
+        double ary[4];
+        _mm256_storeu_pd(ary, data);
+        printf("(%lf,%lf) (%lf,%lf)\n", ary[0], ary[1], ary[2], ary[3]);
+    }
+    template <int M>
+    Complex2 element_mask_neg() const
+    {
+        static const __m256d neg_mask = _mm256_castsi256_pd(
+            _mm256_set_epi64x((M & 8ull) << 60, (M & 4ull) << 61, (M & 2ull) << 62, (M & 1ull) << 63));
+        return _mm256_xor_pd(data, neg_mask);
     }
     template <int M>
     Complex2 element_permute() const
@@ -135,20 +139,34 @@ struct Complex2
     }
     Complex2 all_real() const
     {
-        return _mm256_movedup_pd(data);
+        return _mm256_unpacklo_pd(data, data);
+        // return _mm256_shuffle_pd(data, data, 0);
+        // return _mm256_movedup_pd(data);
     }
     Complex2 all_imag() const
     {
-        return element_permute<0XF>();
+        return _mm256_unpackhi_pd(data, data);
+        // return _mm256_shuffle_pd(data, data, 15);
+        // return element_permute<0XF>();
     }
     Complex2 swap() const
     {
-        return element_permute<0X5>();
+        return _mm256_shuffle_pd(data, data, 5);
+        // return element_permute<0X5>();
     }
     Complex2 mul_neg_i() const
     {
         static const __m256d subber{};
         return Complex2(_mm256_addsub_pd(subber, data)).swap();
+        // return swap().conj();
+    }
+    Complex2 conj() const
+    {
+        return element_mask_neg<10>();
+    }
+    Complex2 linear_mul(Complex2 input) const
+    {
+        return _mm256_mul_pd(data, input.data);
     }
     Complex2 operator+(Complex2 input) const
     {
@@ -160,8 +178,12 @@ struct Complex2
     }
     Complex2 operator*(Complex2 input) const
     {
-        auto imag = _mm256_mul_pd(all_imag().data, input.swap().data);
-        return _mm256_fmaddsub_pd(all_real().data, input.data, imag);
+        const __m256d a_rr = all_real().data;
+        const __m256d a_ii = all_imag().data;
+        const __m256d b_ir = input.swap().data;
+        return _mm256_addsub_pd(_mm256_mul_pd(a_rr, input.data), _mm256_mul_pd(a_ii, b_ir));
+        // auto imag = _mm256_mul_pd(all_imag().data, input.swap().data);
+        // return _mm256_fmaddsub_pd(all_real().data, input.data, imag);
     }
     Complex2 operator/(Complex2 input) const
     {

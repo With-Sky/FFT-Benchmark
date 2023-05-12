@@ -1,4 +1,5 @@
 #include <vector>
+#include <array>
 #include <complex>
 #include <iostream>
 #include <future>
@@ -20,7 +21,8 @@ namespace hint
     using INT_64 = int64_t;
     using ULONG = unsigned long;
     using LONG = long;
-    using Complex = std::complex<double>;
+    using HintFloat = double;
+    using Complex = std::complex<HintFloat>;
 
     constexpr UINT_64 HINT_CHAR_BIT = 8;
     constexpr UINT_64 HINT_SHORT_BIT = 16;
@@ -106,6 +108,20 @@ namespace hint
         }
         std::memcpy(target, source, len * sizeof(T));
     }
+    // 重分配空间
+    template <typename T>
+    inline T *ary_realloc(T *ptr, size_t len)
+    {
+        if (len * sizeof(T) < INT64_MAX)
+        {
+            ptr = static_cast<T *>(realloc(ptr, len * sizeof(T)));
+        }
+        if (ptr == nullptr)
+        {
+            throw("realloc error");
+        }
+        return ptr;
+    }
     // 从其他类型数组拷贝到复数组
     template <typename T>
     inline void com_ary_combine_copy(Complex *target, const T &source1, size_t len1, const T &source2, size_t len2)
@@ -144,25 +160,6 @@ namespace hint
         }
         ary_copy(ary + sub_len, tmp_ary, len - sub_len);
         delete[] tmp_ary;
-    }
-    // 数组分块
-    template <size_t CHUNK, typename T1, typename T2>
-    void ary_chunk_split(T1 input[], T2 output[], size_t in_len)
-    {
-        // 将输入数组视为一整块连续的数据,从第一个比特开始,每CHUNK个bit为一组，依次放到输出结果数组中
-        if (sizeof(T1) < CHUNK)
-        {
-            return;
-        }
-        constexpr T1 MAX = (1 << (CHUNK - 1)) - 1 + (1 << (CHUNK - 1)); // 二进制CHUNK bit全为1的数
-
-        T1 mask = MAX;
-    }
-    // 分块合并
-    template <size_t CHUNK, typename T1, typename T2>
-    void ary_chunk_merge(T1 input[], T2 output[], size_t in_len)
-    {
-        // 将输入数组的元素视为一个个CHUNK bit的数据,从第一个比特开始,依次连续放到输出结果数组中
     }
     // FFT与类FFT变换的命名空间
     namespace hint_transform
@@ -215,15 +212,23 @@ namespace hint
                     }
                     for (size_t pos = 1; pos < vec_size / 2; pos += 2)
                     {
-                        double cos_theta = std::cos(HINT_2PI * pos / len);
-                        double sin_theta = std::sin(HINT_2PI * pos / len);
-                        table1[i][pos] = Complex(cos_theta, -sin_theta);
-                        table1[i][vec_size - pos] = Complex(sin_theta, -cos_theta);
+                        Complex tmp = unit_root(-HINT_2PI * pos / len);
+                        table1[i][pos] = tmp;
+                        table1[i][vec_size - pos] = -Complex(tmp.imag(), tmp.real());
                     }
                     table1[i][vec_size / 2] = std::conj(unit_root(8, 1));
                     for (size_t pos = 1; pos < vec_size / 2; pos += 2)
                     {
-                        Complex tmp = get_omega(i, pos * 3);
+                        Complex tmp;
+                        if (pos * 3 < vec_size)
+                        {
+                            tmp = table1[i][pos * 3];
+                        }
+                        else
+                        {
+                            tmp = table1[i][vec_size * 2 - pos * 3];
+                            tmp.real(-tmp.real());
+                        }
                         table3[i][pos] = tmp;
                         table3[i][vec_size - pos] = Complex(tmp.imag(), tmp.real());
                     }
@@ -241,45 +246,6 @@ namespace hint
             {
                 return unit_root((HINT_2PI * n) / m);
             }
-            // shift表示圆平分为1<<shift份,n表示第几个单位根
-            Complex get_omega(UINT_32 shift, size_t n) const
-            {
-                size_t rank = 1ull << shift;
-                const size_t rank_ff = rank - 1, quad_n = n << 2;
-                // n &= rank_ff;
-                size_t zone = quad_n >> shift; // 第几象限
-                if ((quad_n & rank_ff) == 0)
-                {
-                    static constexpr Complex ONES[4] = {Complex(1, 0), Complex(0, -1), Complex(-1, 0), Complex(0, 1)};
-                    return ONES[zone];
-                }
-                Complex tmp;
-                if ((zone & 2) == 0)
-                {
-                    if ((zone & 1) == 0)
-                    {
-                        tmp = table1[shift][n];
-                    }
-                    else
-                    {
-                        tmp = table1[shift][rank / 2 - n];
-                        tmp.real(-tmp.real());
-                    }
-                }
-                else
-                {
-                    if ((zone & 1) == 0)
-                    {
-                        tmp = -table1[shift][n - rank / 2];
-                    }
-                    else
-                    {
-                        tmp = table1[shift][rank - n];
-                        tmp.imag(-tmp.imag());
-                    }
-                }
-                return tmp;
-            }
             // shift表示圆平分为1<<shift份,3n表示第几个单位根
             Complex get_omega3(UINT_32 shift, size_t n) const
             {
@@ -295,8 +261,17 @@ namespace hint
             {
                 return Complex2(table3[shift].data() + n);
             }
+            // shift表示圆平分为1<<shift份,n表示第几个单位根
+            const Complex *get_omega_ptr(UINT_32 shift, size_t n) const
+            {
+                return table1[shift].data() + n;
+            }
+            // shift表示圆平分为1<<shift份,3n表示第几个单位根
+            const Complex *get_omega3_ptr(UINT_32 shift, size_t n) const
+            {
+                return table3[shift].data() + n;
+            }
         };
-
         constexpr size_t lut_max_rank = 23;
 
         static ComplexTableY TABLE(lut_max_rank);
@@ -368,32 +343,195 @@ namespace hint
             input[rank * 2] = tmp0 - tmp1;
             input[rank * 3] = tmp2 - tmp3;
         }
-        inline void fft_dit_4point(Complex *input, size_t rank = 1)
+        inline void fft_dit_4point_avx(Complex *input)
+        {
+            static const __m256d neg_mask = _mm256_castsi256_pd(
+                _mm256_set_epi64x(INT64_MIN, 0, 0, 0));
+            __m256d tmp0 = _mm256_loadu_pd(reinterpret_cast<double *>(input));     // c0,c1
+            __m256d tmp1 = _mm256_loadu_pd(reinterpret_cast<double *>(input + 2)); // c2,c3
+
+            __m256d tmp2 = _mm256_permute2f128_pd(tmp0, tmp1, 0x20); // c0,c2
+            __m256d tmp3 = _mm256_permute2f128_pd(tmp0, tmp1, 0x31); // c1,c3
+
+            tmp0 = _mm256_add_pd(tmp2, tmp3); // c0+c1,c2+c3
+            tmp1 = _mm256_sub_pd(tmp2, tmp3); // c0-c1,c2-c3
+
+            tmp2 = _mm256_permute2f128_pd(tmp0, tmp1, 0x20); // c0+c1,c0-c1;(A,B)
+            tmp3 = _mm256_permute2f128_pd(tmp0, tmp1, 0x31); // c2+c3,c2-c3
+
+            tmp3 = _mm256_permute_pd(tmp3, 0b0110);
+            tmp3 = _mm256_xor_pd(tmp3, neg_mask); // (C,D)
+
+            tmp0 = _mm256_add_pd(tmp2, tmp3); // A+C,B+D
+            tmp1 = _mm256_sub_pd(tmp2, tmp3); // A-C,B-D
+
+            _mm256_storeu_pd(reinterpret_cast<double *>(input), tmp0);
+            _mm256_storeu_pd(reinterpret_cast<double *>(input + 2), tmp1);
+        }
+        inline void fft_dit_8point_avx(Complex *input)
+        {
+            static const __m256d neg_mask = _mm256_castsi256_pd(_mm256_set_epi64x(INT64_MIN, 0, 0, 0));
+            static const __m256d mul1 = _mm256_set_pd(0.70710678118654752440084436210485, 0.70710678118654752440084436210485, 0, 0);
+            static const __m256d mul2 = _mm256_set_pd(-0.70710678118654752440084436210485, -0.70710678118654752440084436210485, -1, 1);
+            __m256d tmp0 = _mm256_loadu_pd(reinterpret_cast<double *>(input));     // c0,c1
+            __m256d tmp1 = _mm256_loadu_pd(reinterpret_cast<double *>(input + 2)); // c2,c3
+            __m256d tmp2 = _mm256_loadu_pd(reinterpret_cast<double *>(input + 4)); // c0,c1
+            __m256d tmp3 = _mm256_loadu_pd(reinterpret_cast<double *>(input + 6)); // c2,c3
+
+            __m256d tmp4 = _mm256_permute2f128_pd(tmp0, tmp1, 0x20); // c0,c2
+            __m256d tmp5 = _mm256_permute2f128_pd(tmp0, tmp1, 0x31); // c1,c3
+            __m256d tmp6 = _mm256_permute2f128_pd(tmp2, tmp3, 0x20); // c0,c2
+            __m256d tmp7 = _mm256_permute2f128_pd(tmp2, tmp3, 0x31); // c1,c3
+
+            tmp0 = _mm256_add_pd(tmp4, tmp5); // c0+c1,c2+c3
+            tmp1 = _mm256_sub_pd(tmp4, tmp5); // c0-c1,c2-c3
+            tmp2 = _mm256_add_pd(tmp6, tmp7); // c0+c1,c2+c3
+            tmp3 = _mm256_sub_pd(tmp6, tmp7); // c0-c1,c2-c3
+
+            tmp4 = _mm256_permute2f128_pd(tmp0, tmp1, 0x20); // c0+c1,c0-c1;(A,B)
+            tmp5 = _mm256_permute2f128_pd(tmp0, tmp1, 0x31); // c2+c3,c2-c3
+            tmp6 = _mm256_permute2f128_pd(tmp2, tmp3, 0x20); // c0+c1,c0-c1;(A,B)
+            tmp7 = _mm256_permute2f128_pd(tmp2, tmp3, 0x31); // c2+c3,c2-c3
+
+            tmp5 = _mm256_permute_pd(tmp5, 0b0110);
+            tmp5 = _mm256_xor_pd(tmp5, neg_mask); // (C,D)
+            tmp7 = _mm256_permute_pd(tmp7, 0b0110);
+            tmp7 = _mm256_xor_pd(tmp7, neg_mask); // (C,D)
+
+            tmp0 = _mm256_add_pd(tmp4, tmp5); // A+C,B+D
+            tmp1 = _mm256_sub_pd(tmp4, tmp5); // A-C,B-D
+            tmp2 = _mm256_add_pd(tmp6, tmp7); // A+C,B+D
+            tmp3 = _mm256_sub_pd(tmp6, tmp7); // A-C,B-D
+
+            // 2X4point-done
+            tmp6 = _mm256_permute_pd(tmp2, 0b0110);
+            tmp6 = _mm256_addsub_pd(tmp6, tmp2);
+            tmp6 = _mm256_permute_pd(tmp6, 0b0110);
+            tmp6 = _mm256_mul_pd(tmp6, mul1);
+            tmp2 = _mm256_blend_pd(tmp2, tmp6, 0b1100);
+
+            tmp7 = _mm256_permute_pd(tmp3, 0b0101);
+            tmp3 = _mm256_addsub_pd(tmp3, tmp7);
+            tmp3 = _mm256_blend_pd(tmp7, tmp3, 0b1100);
+            tmp3 = _mm256_mul_pd(tmp3, mul2);
+
+            tmp4 = _mm256_add_pd(tmp0, tmp2);
+            tmp5 = _mm256_add_pd(tmp1, tmp3);
+            tmp6 = _mm256_sub_pd(tmp0, tmp2);
+            tmp7 = _mm256_sub_pd(tmp1, tmp3);
+            _mm256_storeu_pd(reinterpret_cast<double *>(input), tmp4);
+            _mm256_storeu_pd(reinterpret_cast<double *>(input + 2), tmp5);
+            _mm256_storeu_pd(reinterpret_cast<double *>(input + 4), tmp6);
+            _mm256_storeu_pd(reinterpret_cast<double *>(input + 6), tmp7);
+        }
+        inline void fft_dif_4point_avx(Complex *input)
+        {
+            __m256d tmp0 = _mm256_loadu_pd(reinterpret_cast<double *>(input));     // c0,c1
+            __m256d tmp1 = _mm256_loadu_pd(reinterpret_cast<double *>(input + 2)); // c2,c3
+
+            __m256d tmp2 = _mm256_add_pd(tmp0, tmp1); // c0+c2,c1+c3;
+            __m256d tmp3 = _mm256_sub_pd(tmp0, tmp1); // c0-c2,c1-c3;
+            tmp3 = _mm256_permute_pd(tmp3, 0b0110);   // c0-c2,r(c1-c3);
+
+            static const __m256d neg_mask = _mm256_castsi256_pd(
+                _mm256_set_epi64x(INT64_MIN, 0, 0, 0));
+            tmp3 = _mm256_xor_pd(tmp3, neg_mask);
+
+            tmp0 = _mm256_permute2f128_pd(tmp2, tmp3, 0x20); // A,C
+            tmp1 = _mm256_permute2f128_pd(tmp2, tmp3, 0x31); // B,D
+
+            tmp2 = _mm256_add_pd(tmp0, tmp1); // A+B,C+D
+            tmp3 = _mm256_sub_pd(tmp0, tmp1); // A-B,C-D
+
+            tmp0 = _mm256_permute2f128_pd(tmp2, tmp3, 0x20);
+            tmp1 = _mm256_permute2f128_pd(tmp2, tmp3, 0x31);
+
+            _mm256_storeu_pd(reinterpret_cast<double *>(input), tmp0);
+            _mm256_storeu_pd(reinterpret_cast<double *>(input + 2), tmp1);
+        }
+        inline void fft_dif_8point_avx(Complex *input)
+        {
+            static const __m256d neg_mask = _mm256_castsi256_pd(_mm256_set_epi64x(INT64_MIN, 0, 0, 0));
+            static const __m256d mul1 = _mm256_set_pd(0.70710678118654752440084436210485, 0.70710678118654752440084436210485, 0, 0);
+            static const __m256d mul2 = _mm256_set_pd(-0.70710678118654752440084436210485, -0.70710678118654752440084436210485, -1, 1);
+            __m256d tmp0 = _mm256_loadu_pd(reinterpret_cast<double *>(input));     // c0,c1
+            __m256d tmp1 = _mm256_loadu_pd(reinterpret_cast<double *>(input + 2)); // c2,c3
+            __m256d tmp2 = _mm256_loadu_pd(reinterpret_cast<double *>(input + 4)); // c4,c5
+            __m256d tmp3 = _mm256_loadu_pd(reinterpret_cast<double *>(input + 6)); // c6,c7
+
+            __m256d tmp4 = _mm256_add_pd(tmp0, tmp2);
+            __m256d tmp5 = _mm256_add_pd(tmp1, tmp3);
+            __m256d tmp6 = _mm256_sub_pd(tmp0, tmp2);
+            __m256d tmp7 = _mm256_sub_pd(tmp1, tmp3);
+
+            tmp2 = _mm256_permute_pd(tmp6, 0b0110);
+            tmp2 = _mm256_addsub_pd(tmp2, tmp6);
+            tmp2 = _mm256_permute_pd(tmp2, 0b0110);
+            tmp2 = _mm256_mul_pd(tmp2, mul1);
+            tmp6 = _mm256_blend_pd(tmp6, tmp2, 0b1100);
+
+            tmp3 = _mm256_permute_pd(tmp7, 0b0101);
+            tmp7 = _mm256_addsub_pd(tmp7, tmp3);
+            tmp7 = _mm256_blend_pd(tmp3, tmp7, 0b1100);
+            tmp7 = _mm256_mul_pd(tmp7, mul2);
+
+            // 2X4point
+            tmp0 = _mm256_add_pd(tmp4, tmp5);
+            tmp1 = _mm256_sub_pd(tmp4, tmp5);
+            tmp1 = _mm256_permute_pd(tmp1, 0b0110);
+            tmp1 = _mm256_xor_pd(tmp1, neg_mask);
+
+            tmp2 = _mm256_add_pd(tmp6, tmp7);
+            tmp3 = _mm256_sub_pd(tmp6, tmp7);
+            tmp3 = _mm256_permute_pd(tmp3, 0b0110);
+            tmp3 = _mm256_xor_pd(tmp3, neg_mask);
+
+            tmp4 = _mm256_permute2f128_pd(tmp0, tmp1, 0x20);
+            tmp5 = _mm256_permute2f128_pd(tmp0, tmp1, 0x31);
+            tmp6 = _mm256_permute2f128_pd(tmp2, tmp3, 0x20);
+            tmp7 = _mm256_permute2f128_pd(tmp2, tmp3, 0x31);
+
+            tmp0 = _mm256_add_pd(tmp4, tmp5);
+            tmp1 = _mm256_sub_pd(tmp4, tmp5);
+            tmp2 = _mm256_add_pd(tmp6, tmp7);
+            tmp3 = _mm256_sub_pd(tmp6, tmp7);
+
+            tmp4 = _mm256_permute2f128_pd(tmp0, tmp1, 0x20);
+            tmp5 = _mm256_permute2f128_pd(tmp0, tmp1, 0x31);
+            tmp6 = _mm256_permute2f128_pd(tmp2, tmp3, 0x20);
+            tmp7 = _mm256_permute2f128_pd(tmp2, tmp3, 0x31);
+
+            _mm256_storeu_pd(reinterpret_cast<double *>(input), tmp4);
+            _mm256_storeu_pd(reinterpret_cast<double *>(input + 2), tmp5);
+            _mm256_storeu_pd(reinterpret_cast<double *>(input + 4), tmp6);
+            _mm256_storeu_pd(reinterpret_cast<double *>(input + 6), tmp7);
+        }
+        inline void fft_dit_4point(Complex *input)
         {
             Complex tmp0 = input[0];
-            Complex tmp1 = input[rank];
-            Complex tmp2 = input[rank * 2];
-            Complex tmp3 = input[rank * 3];
+            Complex tmp1 = input[1];
+            Complex tmp2 = input[2];
+            Complex tmp3 = input[3];
 
             fft_2point(tmp0, tmp1);
             fft_2point(tmp2, tmp3);
             tmp3 = Complex(tmp3.imag(), -tmp3.real());
 
             input[0] = tmp0 + tmp2;
-            input[rank] = tmp1 + tmp3;
-            input[rank * 2] = tmp0 - tmp2;
-            input[rank * 3] = tmp1 - tmp3;
+            input[1] = tmp1 + tmp3;
+            input[2] = tmp0 - tmp2;
+            input[3] = tmp1 - tmp3;
         }
-        inline void fft_dit_8point(Complex *input, size_t rank = 1)
+        inline void fft_dit_8point(Complex *input)
         {
             Complex tmp0 = input[0];
-            Complex tmp1 = input[rank];
-            Complex tmp2 = input[rank * 2];
-            Complex tmp3 = input[rank * 3];
-            Complex tmp4 = input[rank * 4];
-            Complex tmp5 = input[rank * 5];
-            Complex tmp6 = input[rank * 6];
-            Complex tmp7 = input[rank * 7];
+            Complex tmp1 = input[1];
+            Complex tmp2 = input[2];
+            Complex tmp3 = input[3];
+            Complex tmp4 = input[4];
+            Complex tmp5 = input[5];
+            Complex tmp6 = input[6];
+            Complex tmp7 = input[7];
             fft_2point(tmp0, tmp1);
             fft_2point(tmp2, tmp3);
             fft_2point(tmp4, tmp5);
@@ -411,41 +549,41 @@ namespace hint
             tmp7 = -cos_1_8 * Complex(tmp7.real() - tmp7.imag(), tmp7.real() + tmp7.imag());
 
             input[0] = tmp0 + tmp4;
-            input[rank] = tmp1 + tmp5;
-            input[rank * 2] = tmp2 + tmp6;
-            input[rank * 3] = tmp3 + tmp7;
-            input[rank * 4] = tmp0 - tmp4;
-            input[rank * 5] = tmp1 - tmp5;
-            input[rank * 6] = tmp2 - tmp6;
-            input[rank * 7] = tmp3 - tmp7;
+            input[1] = tmp1 + tmp5;
+            input[2] = tmp2 + tmp6;
+            input[3] = tmp3 + tmp7;
+            input[4] = tmp0 - tmp4;
+            input[5] = tmp1 - tmp5;
+            input[6] = tmp2 - tmp6;
+            input[7] = tmp3 - tmp7;
         }
 
-        inline void fft_dif_4point(Complex *input, size_t rank = 1)
+        inline void fft_dif_4point(Complex *input)
         {
             Complex tmp0 = input[0];
-            Complex tmp1 = input[rank];
-            Complex tmp2 = input[rank * 2];
-            Complex tmp3 = input[rank * 3];
+            Complex tmp1 = input[1];
+            Complex tmp2 = input[2];
+            Complex tmp3 = input[3];
 
             fft_2point(tmp0, tmp2);
             fft_2point(tmp1, tmp3);
             tmp3 = Complex(tmp3.imag(), -tmp3.real());
 
             input[0] = tmp0 + tmp1;
-            input[rank] = tmp0 - tmp1;
-            input[rank * 2] = tmp2 + tmp3;
-            input[rank * 3] = tmp2 - tmp3;
+            input[1] = tmp0 - tmp1;
+            input[2] = tmp2 + tmp3;
+            input[3] = tmp2 - tmp3;
         }
-        inline void fft_dif_8point(Complex *input, size_t rank = 1)
+        inline void fft_dif_8point(Complex *input)
         {
             Complex tmp0 = input[0];
-            Complex tmp1 = input[rank];
-            Complex tmp2 = input[rank * 2];
-            Complex tmp3 = input[rank * 3];
-            Complex tmp4 = input[rank * 4];
-            Complex tmp5 = input[rank * 5];
-            Complex tmp6 = input[rank * 6];
-            Complex tmp7 = input[rank * 7];
+            Complex tmp1 = input[1];
+            Complex tmp2 = input[2];
+            Complex tmp3 = input[3];
+            Complex tmp4 = input[4];
+            Complex tmp5 = input[5];
+            Complex tmp6 = input[6];
+            Complex tmp7 = input[7];
 
             fft_2point(tmp0, tmp4);
             fft_2point(tmp1, tmp5);
@@ -464,13 +602,13 @@ namespace hint
             tmp7 = Complex(tmp7.imag(), -tmp7.real());
 
             input[0] = tmp0 + tmp1;
-            input[rank] = tmp0 - tmp1;
-            input[rank * 2] = tmp2 + tmp3;
-            input[rank * 3] = tmp2 - tmp3;
-            input[rank * 4] = tmp4 + tmp5;
-            input[rank * 5] = tmp4 - tmp5;
-            input[rank * 6] = tmp6 + tmp7;
-            input[rank * 7] = tmp6 - tmp7;
+            input[1] = tmp0 - tmp1;
+            input[2] = tmp2 + tmp3;
+            input[3] = tmp2 - tmp3;
+            input[4] = tmp4 + tmp5;
+            input[5] = tmp4 - tmp5;
+            input[6] = tmp6 + tmp7;
+            input[7] = tmp6 - tmp7;
         }
 
         // fft基2时间抽取蝶形变换
@@ -554,10 +692,10 @@ namespace hint
         inline void fft_split_radix_dif_butterfly(Complex2 omega, Complex2 omega_cube,
                                                   Complex *input, size_t rank)
         {
-            Complex2 tmp0 = (input);
-            Complex2 tmp1 = (input + rank);
-            Complex2 tmp2 = (input + rank * 2);
-            Complex2 tmp3 = (input + rank * 3);
+            Complex2 tmp0 = input;
+            Complex2 tmp1 = input + rank;
+            Complex2 tmp2 = input + rank * 2;
+            Complex2 tmp3 = input + rank * 3;
 
             fft_2point(tmp0, tmp2);
             fft_2point(tmp1, tmp3);
@@ -567,6 +705,62 @@ namespace hint
             tmp1.store(input + rank);
             ((tmp2 + tmp3) * omega).store(input + rank * 2);
             ((tmp2 - tmp3) * omega_cube).store(input + rank * 3);
+        }
+        // fft分裂基时间抽取蝶形变换
+        inline void fft_split_radix_dit_butterfly(const Complex *omega,const Complex *omega_cube,
+                                                  Complex *input, size_t rank)
+        {
+            Complex2 tmp0 = input;
+            Complex2 tmp4 = input + 2;
+            Complex2 tmp1 = input + rank;
+            Complex2 tmp5 = input + rank + 2;
+            Complex2 tmp2 = Complex2(input + rank * 2) * Complex2(omega);
+            Complex2 tmp6 = Complex2(input + rank * 2 + 2) * Complex2(omega + 2);
+            Complex2 tmp3 = Complex2(input + rank * 3) * Complex2(omega_cube);
+            Complex2 tmp7 = Complex2(input + rank * 3 + 2) * Complex2(omega_cube + 2);
+
+            fft_2point(tmp2, tmp3);
+            fft_2point(tmp6, tmp7);
+            tmp3 = tmp3.mul_neg_i();
+            tmp7 = tmp7.mul_neg_i();
+
+            (tmp0 + tmp2).store(input);
+            (tmp4 + tmp6).store(input + 2);
+            (tmp1 + tmp3).store(input + rank);
+            (tmp5 + tmp7).store(input + rank + 2);
+            (tmp0 - tmp2).store(input + rank * 2);
+            (tmp4 - tmp6).store(input + rank * 2 + 2);
+            (tmp1 - tmp3).store(input + rank * 3);
+            (tmp5 - tmp7).store(input + rank * 3 + 2);
+        }
+        // fft分裂基频率抽取蝶形变换
+        inline void fft_split_radix_dif_butterfly(const Complex *omega,const Complex *omega_cube,
+                                                  Complex *input, size_t rank)
+        {
+            Complex2 tmp0 = input;
+            Complex2 tmp4 = input + 2;
+            Complex2 tmp1 = input + rank;
+            Complex2 tmp5 = input + rank + 2;
+            Complex2 tmp2 = input + rank * 2;
+            Complex2 tmp6 = input + rank * 2 + 2;
+            Complex2 tmp3 = input + rank * 3;
+            Complex2 tmp7 = input + rank * 3 + 2;
+
+            fft_2point(tmp0, tmp2);
+            fft_2point(tmp1, tmp3);
+            fft_2point(tmp4, tmp6);
+            fft_2point(tmp5, tmp7);
+            tmp3 = tmp3.mul_neg_i();
+            tmp7 = tmp7.mul_neg_i();
+
+            tmp0.store(input);
+            tmp4.store(input + 2);
+            tmp1.store(input + rank);
+            tmp5.store(input + rank + 2);
+            ((tmp2 + tmp3) * Complex2(omega)).store(input + rank * 2);
+            ((tmp6 + tmp7) * Complex2(omega + 2)).store(input + rank * 2 + 2);
+            ((tmp2 - tmp3) * Complex2(omega_cube)).store(input + rank * 3);
+            ((tmp6 - tmp7) * Complex2(omega_cube + 2)).store(input + rank * 3 + 2);
         }
         // fft基4时间抽取蝶形变换
         inline void fft_radix4_dit_butterfly(Complex omega, Complex omega_sqr, Complex omega_cube,
@@ -630,10 +824,10 @@ namespace hint
             fft_split_radix_dit_template<half_len>(input);
             fft_split_radix_dit_template<quarter_len>(input + half_len);
             fft_split_radix_dit_template<quarter_len>(input + half_len + quarter_len);
-            for (size_t i = 0; i < quarter_len; i += 2)
+            for (size_t i = 0; i < quarter_len; i += 4)
             {
-                auto omega = TABLE.get_omegaX2(log_len, i);
-                auto omega_cube = TABLE.get_omega3X2(log_len, i);
+                auto omega = TABLE.get_omega_ptr(log_len, i);
+                auto omega_cube = TABLE.get_omega3_ptr(log_len, i);
                 fft_split_radix_dit_butterfly(omega, omega_cube, input + i, quarter_len);
             }
         }
@@ -649,12 +843,12 @@ namespace hint
         template <>
         void fft_split_radix_dit_template<4>(Complex *input)
         {
-            fft_dit_4point(input, 1);
+            fft_dit_4point_avx(input);
         }
         template <>
         void fft_split_radix_dit_template<8>(Complex *input)
         {
-            fft_dit_8point(input, 1);
+            fft_dit_8point_avx(input);
         }
 
         // 模板化频率抽取分裂基fft
@@ -663,10 +857,10 @@ namespace hint
         {
             constexpr size_t log_len = hint_log2(LEN);
             constexpr size_t half_len = LEN / 2, quarter_len = LEN / 4;
-            for (size_t i = 0; i < quarter_len; i += 2)
+            for (size_t i = 0; i < quarter_len; i += 4)
             {
-                auto omega = TABLE.get_omegaX2(log_len, i);
-                auto omega_cube = TABLE.get_omega3X2(log_len, i);
+                auto omega = TABLE.get_omega_ptr(log_len, i);
+                auto omega_cube = TABLE.get_omega3_ptr(log_len, i);
                 fft_split_radix_dif_butterfly(omega, omega_cube, input + i, quarter_len);
             }
             fft_split_radix_dif_template<half_len>(input);
@@ -685,46 +879,41 @@ namespace hint
         template <>
         void fft_split_radix_dif_template<4>(Complex *input)
         {
-            fft_dif_4point(input, 1);
+            fft_dif_4point_avx(input);
         }
         template <>
         void fft_split_radix_dif_template<8>(Complex *input)
         {
-            fft_dif_8point(input, 1);
+            fft_dif_8point_avx(input);
         }
 
-        // 辅助选择函数
         template <size_t LEN = 1>
-        void fft_split_radix_dit_template_alt(Complex *input, size_t fft_len)
+        void fft_dit_template(Complex *input, size_t fft_len)
         {
             if (fft_len > LEN)
             {
-                fft_split_radix_dit_template_alt<LEN * 2>(input, fft_len);
+                fft_dit_template<LEN * 2>(input, fft_len);
                 return;
             }
             TABLE.expand(hint_log2(LEN));
             fft_split_radix_dit_template<LEN>(input);
         }
         template <>
-        void fft_split_radix_dit_template_alt<1 << 24>(Complex *input, size_t fft_len) {}
+        void fft_dit_template<1 << 24>(Complex *input, size_t fft_len) {}
 
-        // 辅助选择函数
         template <size_t LEN = 1>
-        void fft_split_radix_dif_template_alt(Complex *input, size_t fft_len)
+        void fft_dif_template(Complex *input, size_t fft_len)
         {
             if (fft_len > LEN)
             {
-                fft_split_radix_dif_template_alt<LEN * 2>(input, fft_len);
+                fft_dif_template<LEN * 2>(input, fft_len);
                 return;
             }
             TABLE.expand(hint_log2(LEN));
             fft_split_radix_dif_template<LEN>(input);
         }
         template <>
-        void fft_split_radix_dif_template_alt<1 << 24>(Complex *input, size_t fft_len) {}
-
-        auto fft_split_radix_dit = fft_split_radix_dit_template_alt<1>;
-        auto fft_split_radix_dif = fft_split_radix_dif_template_alt<1>;
+        void fft_dif_template<1 << 24>(Complex *input, size_t fft_len) {}
 
         /// @brief 时间抽取基2fft
         /// @param input 复数组
@@ -737,7 +926,7 @@ namespace hint
             {
                 binary_reverse_swap(input, fft_len);
             }
-            fft_split_radix_dit(input, fft_len);
+            fft_dit_template<1>(input, fft_len);
         }
 
         /// @brief 频率抽取基2fft
@@ -747,7 +936,7 @@ namespace hint
         inline void fft_dif(Complex *input, size_t fft_len, bool bit_rev = true)
         {
             fft_len = max_2pow(fft_len);
-            fft_split_radix_dif(input, fft_len);
+            fft_dif_template<1>(input, fft_len);
             if (bit_rev)
             {
                 binary_reverse_swap(input, fft_len);
@@ -891,7 +1080,8 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
     size_t len1 = in1.size(), len2 = in2.size(), out_len = len1 + len2;
     vector<T> result(out_len);
     size_t fft_len = min_2pow(out_len);
-    Complex *fft_ary = new Complex[fft_len];
+    // Complex2 *avx_ary = new Complex2[fft_len / 2];
+    Complex *fft_ary = (Complex *)_mm_malloc(fft_len * sizeof(Complex), sizeof(Complex2));
     com_ary_combine_copy(fft_ary, in1, len1, in2, len2);
     // fft_radix2_dif_lut(fft_ary, fft_len, false); // 经典FFT
 #if MULTITHREAD == 1
@@ -899,10 +1089,12 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
 #else
     fft_dif(fft_ary, fft_len, false); // 优化FFT
 #endif
+    double inv = -0.5 / fft_len;
+    Complex2 invx4(inv);
     for (size_t i = 0; i < fft_len; i++)
     {
         Complex tmp = fft_ary[i];
-        fft_ary[i] = std::conj(tmp * tmp);
+        fft_ary[i] = std::conj(tmp * tmp) * inv;
     }
     // fft_radix2_dit_lut(fft_ary, fft_len, false); // 经典FFT
 #if MULTITHREAD == 1
@@ -910,12 +1102,11 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
 #else
     fft_dit(fft_ary, fft_len, false); // 优化FFT
 #endif
-    double inv = -0.5 / fft_len;
     for (size_t i = 0; i < out_len; i++)
     {
-        result[i] = static_cast<T>(fft_ary[i].imag() * inv + 0.5);
+        result[i] = static_cast<T>(fft_ary[i].imag() + 0.5);
     }
-    delete[] fft_ary;
+    _mm_free(fft_ary);
     return result;
 }
 inline void stress(Complex ary[], size_t len)

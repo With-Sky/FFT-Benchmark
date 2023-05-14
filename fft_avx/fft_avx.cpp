@@ -247,6 +247,24 @@ namespace hint
                 return unit_root((HINT_2PI * n) / m);
             }
             // shift表示圆平分为1<<shift份,3n表示第几个单位根
+            Complex get_omega(UINT_32 shift, size_t n) const
+            {
+                size_t vec_size = (size_t(1) << shift) / 4;
+                if (n < vec_size)
+                {
+                    return table1[shift][n];
+                }
+                else if (n > vec_size)
+                {
+                    Complex tmp = table1[shift][vec_size * 2 - n];
+                    return Complex(-tmp.real(), tmp.imag());
+                }
+                else
+                {
+                    return Complex(0, -1);
+                }
+            }
+            // shift表示圆平分为1<<shift份,3n表示第几个单位根
             Complex get_omega3(UINT_32 shift, size_t n) const
             {
                 return table3[shift][n];
@@ -707,7 +725,7 @@ namespace hint
             ((tmp2 - tmp3) * omega_cube).store(input + rank * 3);
         }
         // fft分裂基时间抽取蝶形变换
-        inline void fft_split_radix_dit_butterfly(const Complex *omega,const Complex *omega_cube,
+        inline void fft_split_radix_dit_butterfly(const Complex *omega, const Complex *omega_cube,
                                                   Complex *input, size_t rank)
         {
             Complex2 tmp0 = input;
@@ -734,7 +752,7 @@ namespace hint
             (tmp5 - tmp7).store(input + rank * 3 + 2);
         }
         // fft分裂基频率抽取蝶形变换
-        inline void fft_split_radix_dif_butterfly(const Complex *omega,const Complex *omega_cube,
+        inline void fft_split_radix_dif_butterfly(const Complex *omega, const Complex *omega_cube,
                                                   Complex *input, size_t rank)
         {
             Complex2 tmp0 = input;
@@ -974,7 +992,6 @@ namespace hint
             fft_conj(input, fft_len, fft_len);
         }
 #if MULTITHREAD == 1
-        // ComplexTable T(23);
         void fft_dit_2ths(Complex *input, size_t fft_len)
         {
             const size_t half_len = fft_len / 2;
@@ -1085,7 +1102,7 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
     com_ary_combine_copy(fft_ary, in1, len1, in2, len2);
     // fft_radix2_dif_lut(fft_ary, fft_len, false); // 经典FFT
 #if MULTITHREAD == 1
-    fft_dif_2ths(fft_ary, fft_len); // 4线程FFT
+    fft_dif_4ths(fft_ary, fft_len); // 4线程FFT
 #else
     fft_dif(fft_ary, fft_len, false); // 优化FFT
 #endif
@@ -1098,7 +1115,7 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
     }
     // fft_radix2_dit_lut(fft_ary, fft_len, false); // 经典FFT
 #if MULTITHREAD == 1
-    fft_dit_2ths(fft_ary, fft_len); // 4线程FFT
+    fft_dit_4ths(fft_ary, fft_len); // 4线程FFT
 #else
     fft_dit(fft_ary, fft_len, false); // 优化FFT
 #endif

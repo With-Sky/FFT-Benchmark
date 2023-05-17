@@ -137,6 +137,11 @@ struct Complex2
     {
         return _mm256_permute_pd(data, M);
     }
+    template <int M>
+    Complex2 element_permute64() const
+    {
+        return _mm256_permute4x64_pd(data, M);
+    }
     Complex2 all_real() const
     {
         return _mm256_unpacklo_pd(data, data);

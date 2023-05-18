@@ -164,6 +164,16 @@ namespace hint
     // FFT与类FFT变换的命名空间
     namespace hint_transform
     {
+        // 返回单位圆上辐角为theta的点
+        static Complex unit_root(HintFloat theta)
+        {
+            return std::polar<HintFloat>(1.0, theta);
+        }
+        // 返回单位圆上平分m份的第n个
+        static Complex unit_root(size_t m, size_t n)
+        {
+            return unit_root((HINT_2PI * n) / m);
+        }
         class ComplexTableY
         {
         private:
@@ -229,17 +239,6 @@ namespace hint
                     table3[i][vec_size / 2] = std::conj(unit_root(8, 3));
                 }
                 cur_log_size = std::max(cur_log_size, shift);
-            }
-            // 返回单位圆上辐角为theta的点
-
-            static Complex unit_root(double theta)
-            {
-                return std::polar<double>(1.0, theta);
-            }
-            // 返回单位圆上平分m份的第n个
-            static Complex unit_root(size_t m, size_t n)
-            {
-                return unit_root((HINT_2PI * n) / m);
             }
             // shift表示圆平分为1<<shift份,3n表示第几个单位根
             Complex get_omega(UINT_32 shift, size_t n) const

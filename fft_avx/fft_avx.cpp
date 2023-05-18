@@ -240,6 +240,17 @@ namespace hint
                 }
                 cur_log_size = std::max(cur_log_size, shift);
             }
+            // 返回单位圆上辐角为theta的点
+
+            static Complex unit_root(double theta)
+            {
+                return std::polar<double>(1.0, theta);
+            }
+            // 返回单位圆上平分m份的第n个
+            static Complex unit_root(size_t m, size_t n)
+            {
+                return unit_root((HINT_2PI * n) / m);
+            }
             // shift表示圆平分为1<<shift份,3n表示第几个单位根
             Complex get_omega(UINT_32 shift, size_t n) const
             {
@@ -284,8 +295,8 @@ namespace hint
                 return table3[shift].data() + n;
             }
         };
-        constexpr size_t lut_max_rank = 23;
 
+        constexpr size_t lut_max_rank = 23;
         static ComplexTableY TABLE(lut_max_rank);
 
         // 二进制逆序
@@ -307,27 +318,6 @@ namespace hint
                     std::swap(ary[i], ary[j]);
                 }
             }
-        }
-        // 四进制逆序
-        template <typename SizeType = UINT_32, typename T>
-        void quaternary_reverse_swap(T &ary, size_t len)
-        {
-            SizeType log_n = hint_log2(len);
-            SizeType *rev = new SizeType[len / 4];
-            rev[0] = 0;
-            for (SizeType i = 1; i < len; i++)
-            {
-                SizeType index = (rev[i >> 2] >> 2) | ((i & 3) << (log_n - 2)); // 求rev交换数组
-                if (i < len / 4)
-                {
-                    rev[i] = index;
-                }
-                if (i < index)
-                {
-                    std::swap(ary[i], ary[index]);
-                }
-            }
-            delete[] rev;
         }
         // 2点fft
         template <typename T>
@@ -518,110 +508,6 @@ namespace hint
             _mm256_storeu_pd(reinterpret_cast<double *>(input + 4), tmp6);
             _mm256_storeu_pd(reinterpret_cast<double *>(input + 6), tmp7);
         }
-        inline void fft_dit_4point(Complex *input)
-        {
-            Complex tmp0 = input[0];
-            Complex tmp1 = input[1];
-            Complex tmp2 = input[2];
-            Complex tmp3 = input[3];
-
-            fft_2point(tmp0, tmp1);
-            fft_2point(tmp2, tmp3);
-            tmp3 = Complex(tmp3.imag(), -tmp3.real());
-
-            input[0] = tmp0 + tmp2;
-            input[1] = tmp1 + tmp3;
-            input[2] = tmp0 - tmp2;
-            input[3] = tmp1 - tmp3;
-        }
-        inline void fft_dit_8point(Complex *input)
-        {
-            Complex tmp0 = input[0];
-            Complex tmp1 = input[1];
-            Complex tmp2 = input[2];
-            Complex tmp3 = input[3];
-            Complex tmp4 = input[4];
-            Complex tmp5 = input[5];
-            Complex tmp6 = input[6];
-            Complex tmp7 = input[7];
-            fft_2point(tmp0, tmp1);
-            fft_2point(tmp2, tmp3);
-            fft_2point(tmp4, tmp5);
-            fft_2point(tmp6, tmp7);
-            tmp3 = Complex(tmp3.imag(), -tmp3.real());
-            tmp7 = Complex(tmp7.imag(), -tmp7.real());
-
-            fft_2point(tmp0, tmp2);
-            fft_2point(tmp1, tmp3);
-            fft_2point(tmp4, tmp6);
-            fft_2point(tmp5, tmp7);
-            static constexpr double cos_1_8 = 0.70710678118654752440084436210485;
-            tmp5 = cos_1_8 * Complex(tmp5.imag() + tmp5.real(), tmp5.imag() - tmp5.real());
-            tmp6 = Complex(tmp6.imag(), -tmp6.real());
-            tmp7 = -cos_1_8 * Complex(tmp7.real() - tmp7.imag(), tmp7.real() + tmp7.imag());
-
-            input[0] = tmp0 + tmp4;
-            input[1] = tmp1 + tmp5;
-            input[2] = tmp2 + tmp6;
-            input[3] = tmp3 + tmp7;
-            input[4] = tmp0 - tmp4;
-            input[5] = tmp1 - tmp5;
-            input[6] = tmp2 - tmp6;
-            input[7] = tmp3 - tmp7;
-        }
-
-        inline void fft_dif_4point(Complex *input)
-        {
-            Complex tmp0 = input[0];
-            Complex tmp1 = input[1];
-            Complex tmp2 = input[2];
-            Complex tmp3 = input[3];
-
-            fft_2point(tmp0, tmp2);
-            fft_2point(tmp1, tmp3);
-            tmp3 = Complex(tmp3.imag(), -tmp3.real());
-
-            input[0] = tmp0 + tmp1;
-            input[1] = tmp0 - tmp1;
-            input[2] = tmp2 + tmp3;
-            input[3] = tmp2 - tmp3;
-        }
-        inline void fft_dif_8point(Complex *input)
-        {
-            Complex tmp0 = input[0];
-            Complex tmp1 = input[1];
-            Complex tmp2 = input[2];
-            Complex tmp3 = input[3];
-            Complex tmp4 = input[4];
-            Complex tmp5 = input[5];
-            Complex tmp6 = input[6];
-            Complex tmp7 = input[7];
-
-            fft_2point(tmp0, tmp4);
-            fft_2point(tmp1, tmp5);
-            fft_2point(tmp2, tmp6);
-            fft_2point(tmp3, tmp7);
-            static constexpr double cos_1_8 = 0.70710678118654752440084436210485;
-            tmp5 = cos_1_8 * Complex(tmp5.imag() + tmp5.real(), tmp5.imag() - tmp5.real());
-            tmp6 = Complex(tmp6.imag(), -tmp6.real());
-            tmp7 = -cos_1_8 * Complex(tmp7.real() - tmp7.imag(), tmp7.real() + tmp7.imag());
-
-            fft_2point(tmp0, tmp2);
-            fft_2point(tmp1, tmp3);
-            fft_2point(tmp4, tmp6);
-            fft_2point(tmp5, tmp7);
-            tmp3 = Complex(tmp3.imag(), -tmp3.real());
-            tmp7 = Complex(tmp7.imag(), -tmp7.real());
-
-            input[0] = tmp0 + tmp1;
-            input[1] = tmp0 - tmp1;
-            input[2] = tmp2 + tmp3;
-            input[3] = tmp2 - tmp3;
-            input[4] = tmp4 + tmp5;
-            input[5] = tmp4 - tmp5;
-            input[6] = tmp6 + tmp7;
-            input[7] = tmp6 - tmp7;
-        }
 
         // fft基2时间抽取蝶形变换
         inline void fft_radix2_dit_butterfly(Complex omega, Complex *input, size_t rank)
@@ -684,7 +570,7 @@ namespace hint
             input[rank * 3] = (tmp2 - tmp3) * omega_cube;
         }
         // fft分裂基时间抽取蝶形变换
-        inline void fft_split_radix_dit_butterfly(Complex2 omega, Complex2 omega_cube,
+        inline void fft_split_radix_dit_butterfly(Complex2 &omega, Complex2 &omega_cube,
                                                   Complex *input, size_t rank)
         {
             Complex2 tmp0 = input;
@@ -699,24 +585,6 @@ namespace hint
             (tmp1 + tmp3).store(input + rank);
             (tmp0 - tmp2).store(input + rank * 2);
             (tmp1 - tmp3).store(input + rank * 3);
-        }
-        // fft分裂基频率抽取蝶形变换
-        inline void fft_split_radix_dif_butterfly(Complex2 omega, Complex2 omega_cube,
-                                                  Complex *input, size_t rank)
-        {
-            Complex2 tmp0 = input;
-            Complex2 tmp1 = input + rank;
-            Complex2 tmp2 = input + rank * 2;
-            Complex2 tmp3 = input + rank * 3;
-
-            fft_2point(tmp0, tmp2);
-            fft_2point(tmp1, tmp3);
-            tmp3 = tmp3.mul_neg_i();
-
-            tmp0.store(input);
-            tmp1.store(input + rank);
-            ((tmp2 + tmp3) * omega).store(input + rank * 2);
-            ((tmp2 - tmp3) * omega_cube).store(input + rank * 3);
         }
         // fft分裂基时间抽取蝶形变换
         inline void fft_split_radix_dit_butterfly(const Complex *omega, const Complex *omega_cube,
@@ -774,44 +642,26 @@ namespace hint
             ((tmp2 - tmp3) * Complex2(omega_cube)).store(input + rank * 3);
             ((tmp6 - tmp7) * Complex2(omega_cube + 2)).store(input + rank * 3 + 2);
         }
-        // fft基4时间抽取蝶形变换
-        inline void fft_radix4_dit_butterfly(Complex omega, Complex omega_sqr, Complex omega_cube,
-                                             Complex *input, size_t rank)
+        // fft分裂基频率抽取蝶形变换
+        inline void fft_split_radix_dif_butterfly(Complex2 &omega, Complex2 &omega_cube,
+                                                  Complex *input, size_t rank)
         {
-            Complex tmp0 = input[0];
-            Complex tmp1 = input[rank] * omega;
-            Complex tmp2 = input[rank * 2] * omega_sqr;
-            Complex tmp3 = input[rank * 3] * omega_cube;
+            Complex2 tmp0 = (input);
+            Complex2 tmp1 = (input + rank);
+            Complex2 tmp2 = (input + rank * 2);
+            Complex2 tmp3 = (input + rank * 3);
 
             fft_2point(tmp0, tmp2);
             fft_2point(tmp1, tmp3);
-            tmp3 = Complex(tmp3.imag(), -tmp3.real());
+            tmp3 = tmp3.mul_neg_i();
 
-            input[0] = tmp0 + tmp1;
-            input[rank] = tmp2 + tmp3;
-            input[rank * 2] = tmp0 - tmp1;
-            input[rank * 3] = tmp2 - tmp3;
-        }
-        // fft基4频率抽取蝶形变换
-        inline void fft_radix4_dif_butterfly(Complex omega, Complex omega_sqr, Complex omega_cube,
-                                             Complex *input, size_t rank)
-        {
-            Complex tmp0 = input[0];
-            Complex tmp1 = input[rank];
-            Complex tmp2 = input[rank * 2];
-            Complex tmp3 = input[rank * 3];
-
-            fft_2point(tmp0, tmp2);
-            fft_2point(tmp1, tmp3);
-            tmp3 = Complex(tmp3.imag(), -tmp3.real());
-
-            input[0] = tmp0 + tmp1;
-            input[rank] = (tmp2 + tmp3) * omega;
-            input[rank * 2] = (tmp0 - tmp1) * omega_sqr;
-            input[rank * 3] = (tmp2 - tmp3) * omega_cube;
+            tmp0.store(input);
+            tmp1.store(input + rank);
+            ((tmp2 + tmp3) * omega).store(input + rank * 2);
+            ((tmp2 - tmp3) * omega_cube).store(input + rank * 3);
         }
         // 求共轭复数及归一化，逆变换用
-        inline void fft_conj(Complex *input, size_t fft_len, double div = 1)
+        inline void fft_conj(Complex *input, size_t fft_len, HintFloat div = 1)
         {
             for (size_t i = 0; i < fft_len; i++)
             {
@@ -821,13 +671,19 @@ namespace hint
         // 归一化,逆变换用
         inline void fft_normalize(Complex *input, size_t fft_len)
         {
-            double len = static_cast<double>(fft_len);
+            HintFloat len = static_cast<HintFloat>(fft_len);
             for (size_t i = 0; i < fft_len; i++)
             {
                 input[i] /= len;
             }
         }
         // 模板化时间抽取分裂基fft
+        static constexpr HintFloat cos_1_8 = 0.70710678118654752440084436210485;
+        static constexpr HintFloat cos_1_16 = 0.92387953251128675612818318939679;
+        static constexpr HintFloat sin_1_16 = 0.3826834323650897717284599840304;
+        static constexpr Complex w1(cos_1_16, -sin_1_16), w3(sin_1_16, -cos_1_16), w9(-cos_1_16, sin_1_16);
+        static constexpr Complex omega1[4] = {Complex(1), w1, Complex(cos_1_8, -cos_1_8), w3};
+        static constexpr Complex omega3[4] = {Complex(1), w3, Complex(-cos_1_8, -cos_1_8), w9};
         template <size_t LEN>
         void fft_split_radix_dit_template(Complex *input)
         {
@@ -836,11 +692,14 @@ namespace hint
             fft_split_radix_dit_template<half_len>(input);
             fft_split_radix_dit_template<quarter_len>(input + half_len);
             fft_split_radix_dit_template<quarter_len>(input + half_len + quarter_len);
-            for (size_t i = 0; i < quarter_len; i += 4)
+            for (size_t i = 0; i < quarter_len; i += 8)
             {
                 auto omega = TABLE.get_omega_ptr(log_len, i);
                 auto omega_cube = TABLE.get_omega3_ptr(log_len, i);
                 fft_split_radix_dit_butterfly(omega, omega_cube, input + i, quarter_len);
+                omega = TABLE.get_omega_ptr(log_len, i + 4);
+                omega_cube = TABLE.get_omega3_ptr(log_len, i + 4);
+                fft_split_radix_dit_butterfly(omega, omega_cube, input + i + 4, quarter_len);
             }
         }
         template <>
@@ -862,18 +721,29 @@ namespace hint
         {
             fft_dit_8point_avx(input);
         }
-
+        template <>
+        void fft_split_radix_dit_template<16>(Complex *input)
+        {
+            constexpr size_t log_len = hint_log2(16);
+            fft_dit_8point_avx(input);
+            fft_dit_4point_avx(input + 8);
+            fft_dit_4point_avx(input + 12);
+            fft_split_radix_dit_butterfly(omega1, omega3, input, 4);
+        }
         // 模板化频率抽取分裂基fft
         template <size_t LEN>
         void fft_split_radix_dif_template(Complex *input)
         {
             constexpr size_t log_len = hint_log2(LEN);
             constexpr size_t half_len = LEN / 2, quarter_len = LEN / 4;
-            for (size_t i = 0; i < quarter_len; i += 4)
+            for (size_t i = 0; i < quarter_len; i += 8)
             {
                 auto omega = TABLE.get_omega_ptr(log_len, i);
                 auto omega_cube = TABLE.get_omega3_ptr(log_len, i);
                 fft_split_radix_dif_butterfly(omega, omega_cube, input + i, quarter_len);
+                omega = TABLE.get_omega_ptr(log_len, i + 4);
+                omega_cube = TABLE.get_omega3_ptr(log_len, i + 4);
+                fft_split_radix_dif_butterfly(omega, omega_cube, input + i + 4, quarter_len);
             }
             fft_split_radix_dif_template<half_len>(input);
             fft_split_radix_dif_template<quarter_len>(input + half_len);
@@ -897,6 +767,15 @@ namespace hint
         void fft_split_radix_dif_template<8>(Complex *input)
         {
             fft_dif_8point_avx(input);
+        }
+        template <>
+        void fft_split_radix_dif_template<16>(Complex *input)
+        {
+            constexpr size_t log_len = hint_log2(16);
+            fft_split_radix_dif_butterfly(omega1, omega3, input, 4);
+            fft_dif_8point_avx(input);
+            fft_dif_4point_avx(input + 8);
+            fft_dif_4point_avx(input + 12);
         }
 
         template <size_t LEN = 1>
@@ -1091,7 +970,7 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
     size_t len1 = in1.size(), len2 = in2.size(), out_len = len1 + len2;
     vector<T> result(out_len);
     size_t fft_len = min_2pow(out_len);
-    Complex *fft_ary = new Complex[fft_ary];
+    Complex *fft_ary = new Complex[fft_len];
     com_ary_combine_copy(fft_ary, in1, len1, in2, len2);
     // fft_radix2_dif_lut(fft_ary, fft_len, false); // 经典FFT
 #if MULTITHREAD == 1

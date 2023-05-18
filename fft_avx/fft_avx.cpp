@@ -208,35 +208,30 @@ namespace hint
                     for (size_t pos = 0; pos < vec_size / 2; pos++)
                     {
                         table1[i][pos * 2] = table1[i - 1][pos];
-                        table3[i][pos * 2] = table3[i - 1][pos];
-                    }
-                    for (size_t pos = 1; pos < vec_size / 2; pos += 2)
-                    {
-                        Complex tmp = unit_root(-HINT_2PI * pos / len);
-                        table1[i][pos] = tmp;
-                        table1[i][vec_size - pos] = -Complex(tmp.imag(), tmp.real());
+                        if (pos % 2 == 1)
+                        {
+                            Complex tmp = unit_root(-HINT_2PI * pos / len);
+                            table1[i][pos] = tmp;
+                            table1[i][vec_size - pos] = -Complex(tmp.imag(), tmp.real());
+                        }
                     }
                     table1[i][vec_size / 2] = std::conj(unit_root(8, 1));
-                    for (size_t pos = 1; pos < vec_size / 2; pos += 2)
+                    for (size_t pos = 0; pos < vec_size / 2; pos++)
                     {
-                        Complex tmp;
-                        if (pos * 3 < vec_size)
+                        table3[i][pos * 2] = table3[i - 1][pos];
+                        if (pos % 2 == 1)
                         {
-                            tmp = table1[i][pos * 3];
+                            Complex tmp = get_omega(i, pos * 3);
+                            table3[i][pos] = tmp;
+                            table3[i][vec_size - pos] = Complex(tmp.imag(), tmp.real());
                         }
-                        else
-                        {
-                            tmp = table1[i][vec_size * 2 - pos * 3];
-                            tmp.real(-tmp.real());
-                        }
-                        table3[i][pos] = tmp;
-                        table3[i][vec_size - pos] = Complex(tmp.imag(), tmp.real());
                     }
                     table3[i][vec_size / 2] = std::conj(unit_root(8, 3));
                 }
                 cur_log_size = std::max(cur_log_size, shift);
             }
             // 返回单位圆上辐角为theta的点
+
             static Complex unit_root(double theta)
             {
                 return std::polar<double>(1.0, theta);
@@ -1097,8 +1092,7 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
     size_t len1 = in1.size(), len2 = in2.size(), out_len = len1 + len2;
     vector<T> result(out_len);
     size_t fft_len = min_2pow(out_len);
-    // Complex2 *avx_ary = new Complex2[fft_len / 2];
-    Complex *fft_ary = (Complex *)_mm_malloc(fft_len * sizeof(Complex), sizeof(Complex2));
+    Complex *fft_ary = new Complex[fft_ary];
     com_ary_combine_copy(fft_ary, in1, len1, in2, len2);
     // fft_radix2_dif_lut(fft_ary, fft_len, false); // 经典FFT
 #if MULTITHREAD == 1
@@ -1123,7 +1117,7 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
     {
         result[i] = static_cast<T>(fft_ary[i].imag() + 0.5);
     }
-    _mm_free(fft_ary);
+    delete[] fft_ary;
     return result;
 }
 inline void stress(Complex ary[], size_t len)

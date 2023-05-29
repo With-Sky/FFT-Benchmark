@@ -570,7 +570,7 @@ namespace hint
             input[rank * 3] = (tmp2 - tmp3) * omega_cube;
         }
         // fft分裂基时间抽取蝶形变换
-        inline void fft_split_radix_dit_butterfly(Complex2 &omega, Complex2 &omega_cube,
+        inline void fft_split_radix_dit_butterfly(const Complex2 &omega, const Complex2 &omega_cube,
                                                   Complex *input, size_t rank)
         {
             Complex2 tmp0 = input;
@@ -643,7 +643,7 @@ namespace hint
             ((tmp6 - tmp7) * Complex2(omega_cube + 2)).store(input + rank * 3 + 2);
         }
         // fft分裂基频率抽取蝶形变换
-        inline void fft_split_radix_dif_butterfly(Complex2 &omega, Complex2 &omega_cube,
+        inline void fft_split_radix_dif_butterfly(const Complex2 &omega, const Complex2 &omega_cube,
                                                   Complex *input, size_t rank)
         {
             Complex2 tmp0 = (input);
@@ -682,8 +682,10 @@ namespace hint
         static constexpr HintFloat cos_1_16 = 0.92387953251128675612818318939679;
         static constexpr HintFloat sin_1_16 = 0.3826834323650897717284599840304;
         static constexpr Complex w1(cos_1_16, -sin_1_16), w3(sin_1_16, -cos_1_16), w9(-cos_1_16, sin_1_16);
-        static constexpr Complex omega1[4] = {Complex(1), w1, Complex(cos_1_8, -cos_1_8), w3};
-        static constexpr Complex omega3[4] = {Complex(1), w3, Complex(-cos_1_8, -cos_1_8), w9};
+        static constexpr Complex omega1_table[4] = {Complex(1), w1, Complex(cos_1_8, -cos_1_8), w3};
+        static constexpr Complex omega3_table[4] = {Complex(1), w3, Complex(-cos_1_8, -cos_1_8), w9};
+        static const Complex2 omega0(omega1_table), omega1(omega1_table + 2);
+        static const Complex2 omega_cu0(omega3_table), omega_cu1(omega3_table + 2);
         template <size_t LEN>
         void fft_split_radix_dit_template(Complex *input)
         {
@@ -725,10 +727,13 @@ namespace hint
         void fft_split_radix_dit_template<16>(Complex *input)
         {
             constexpr size_t log_len = hint_log2(16);
+            // static const Complex2 omega0(omega1_table), omega1(omega1_table + 2);
+            // static const Complex2 omega_cu0(omega3_table), omega_cu1(omega3_table + 2);
             fft_dit_8point_avx(input);
             fft_dit_4point_avx(input + 8);
             fft_dit_4point_avx(input + 12);
-            fft_split_radix_dit_butterfly(omega1, omega3, input, 4);
+            fft_split_radix_dit_butterfly(omega0, omega_cu0, input, 4);
+            fft_split_radix_dit_butterfly(omega1, omega_cu1, input + 2, 4);
         }
         // 模板化频率抽取分裂基fft
         template <size_t LEN>
@@ -772,39 +777,47 @@ namespace hint
         void fft_split_radix_dif_template<16>(Complex *input)
         {
             constexpr size_t log_len = hint_log2(16);
-            fft_split_radix_dif_butterfly(omega1, omega3, input, 4);
+            // static const Complex2 omega0(omega1_table), omega1(omega1_table + 2);
+            // static const Complex2 omega_cu0(omega3_table), omega_cu1(omega3_table + 2);
+            fft_split_radix_dif_butterfly(omega0, omega_cu0, input, 4);
+            fft_split_radix_dif_butterfly(omega1, omega_cu1, input + 2, 4);
             fft_dif_8point_avx(input);
             fft_dif_4point_avx(input + 8);
             fft_dif_4point_avx(input + 12);
         }
 
-        template <size_t LEN = 1>
-        void fft_dit_template(Complex *input, size_t fft_len)
-        {
-            if (fft_len > LEN)
+        // 辅助选择函数
+            template <size_t LEN = 1>
+            void fft_split_radix_dit_template_alt(Complex *input, size_t fft_len)
             {
-                fft_dit_template<LEN * 2>(input, fft_len);
-                return;
+                if (fft_len < LEN)
+                {
+                    fft_split_radix_dit_template_alt<LEN / 2>(input, fft_len);
+                    return;
+                }
+                TABLE.expand(hint_log2(LEN));
+                fft_split_radix_dit_template<LEN>(input);
             }
-            TABLE.expand(hint_log2(LEN));
-            fft_split_radix_dit_template<LEN>(input);
-        }
-        template <>
-        void fft_dit_template<1 << 24>(Complex *input, size_t fft_len) {}
+            template <>
+            void fft_split_radix_dit_template_alt<0>(Complex *input, size_t fft_len) {}
 
-        template <size_t LEN = 1>
-        void fft_dif_template(Complex *input, size_t fft_len)
-        {
-            if (fft_len > LEN)
+            // 辅助选择函数
+            template <size_t LEN = 1>
+            void fft_split_radix_dif_template_alt(Complex *input, size_t fft_len)
             {
-                fft_dif_template<LEN * 2>(input, fft_len);
-                return;
+                if (fft_len < LEN)
+                {
+                    fft_split_radix_dif_template_alt<LEN / 2>(input, fft_len);
+                    return;
+                }
+                TABLE.expand(hint_log2(LEN));
+                fft_split_radix_dif_template<LEN>(input);
             }
-            TABLE.expand(hint_log2(LEN));
-            fft_split_radix_dif_template<LEN>(input);
-        }
-        template <>
-        void fft_dif_template<1 << 24>(Complex *input, size_t fft_len) {}
+            template <>
+            void fft_split_radix_dif_template_alt<0>(Complex *input, size_t fft_len) {}
+
+            auto fft_split_radix_dit = fft_split_radix_dit_template_alt<size_t(1) << lut_max_rank>;
+            auto fft_split_radix_dif = fft_split_radix_dif_template_alt<size_t(1) << lut_max_rank>;
 
         /// @brief 时间抽取基2fft
         /// @param input 复数组
@@ -817,7 +830,7 @@ namespace hint
             {
                 binary_reverse_swap(input, fft_len);
             }
-            fft_dit_template<1>(input, fft_len);
+            fft_split_radix_dit(input, fft_len);
         }
 
         /// @brief 频率抽取基2fft
@@ -827,7 +840,7 @@ namespace hint
         inline void fft_dif(Complex *input, size_t fft_len, bool bit_rev = true)
         {
             fft_len = max_2pow(fft_len);
-            fft_dif_template<1>(input, fft_len);
+            fft_split_radix_dif(input, fft_len);
             if (bit_rev)
             {
                 binary_reverse_swap(input, fft_len);
@@ -867,6 +880,11 @@ namespace hint
 #if MULTITHREAD == 1
         void fft_dit_2ths(Complex *input, size_t fft_len)
         {
+            if (fft_len <= 8)
+            {
+                fft_dit(input, fft_len);
+                return;
+            }
             const size_t half_len = fft_len / 2;
             const INT_32 log_len = hint_log2(fft_len);
             TABLE.expand(log_len);
@@ -887,6 +905,11 @@ namespace hint
         }
         void fft_dif_2ths(Complex *input, size_t fft_len)
         {
+            if (fft_len <= 8)
+            {
+                fft_dif(input, fft_len);
+                return;
+            }
             const size_t half_len = fft_len / 2;
             const INT_32 log_len = hint_log2(fft_len);
             TABLE.expand(log_len);
@@ -907,6 +930,11 @@ namespace hint
         }
         void fft_dit_4ths(Complex *input, size_t fft_len)
         {
+            if (fft_len <= 8)
+            {
+                fft_dit(input, fft_len);
+                return;
+            }
             const size_t half_len = fft_len / 2;
             const INT_32 log_len = hint_log2(fft_len);
             TABLE.expand(log_len);
@@ -933,6 +961,11 @@ namespace hint
         }
         void fft_dif_4ths(Complex *input, size_t fft_len)
         {
+            if (fft_len <= 8)
+            {
+                fft_dif(input, fft_len);
+                return;
+            }
             const size_t half_len = fft_len / 2;
             const INT_32 log_len = hint_log2(fft_len);
             TABLE.expand(log_len);
@@ -970,7 +1003,7 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
     size_t len1 = in1.size(), len2 = in2.size(), out_len = len1 + len2;
     vector<T> result(out_len);
     size_t fft_len = min_2pow(out_len);
-    Complex *fft_ary = new Complex[fft_len];
+    Complex *fft_ary = new Complex[fft_len]{};
     com_ary_combine_copy(fft_ary, in1, len1, in2, len2);
     // fft_radix2_dif_lut(fft_ary, fft_len, false); // 经典FFT
 #if MULTITHREAD == 1
@@ -980,10 +1013,13 @@ vector<T> poly_multiply(const vector<T> &in1, const vector<T> &in2)
 #endif
     double inv = -0.5 / fft_len;
     Complex2 invx4(inv);
-    for (size_t i = 0; i < fft_len; i++)
+    for (size_t i = 0; i < fft_len; i += 2)
     {
-        Complex tmp = fft_ary[i];
-        fft_ary[i] = std::conj(tmp * tmp) * inv;
+        // Complex tmp = fft_ary[i];
+        // fft_ary[i] = std::conj(tmp * tmp) * inv;
+        Complex2 tmp = fft_ary + i;
+        tmp = tmp * tmp.linear_mul(invx4);
+        (tmp.conj()).store(fft_ary + i);
     }
     // fft_radix2_dit_lut(fft_ary, fft_len, false); // 经典FFT
 #if MULTITHREAD == 1
